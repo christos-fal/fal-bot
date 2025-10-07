@@ -1,13 +1,13 @@
 from typing import Literal
 import io
-import time
 
 import discord
 from discord import app_commands
 import fal_client
 import httpx
 
-from fal_bot import config, moderation  # Added moderation here
+from fal_bot import config, moderation
+from fal_bot.rate_limiter import rate_limiter
 
 # Configure fal_client
 fal_client.api_key = config.FAL_SECRET
@@ -29,91 +29,115 @@ async def command(
     prompt: str,
     aspect_ratio: str = "square_hd",
 ):
-    """Generate images using Hunyuan Image 3.0"""
+    user_id = interaction.user.id
     
-    # FIRST response - only do this ONCE
-    await interaction.response.send_message("🔍 Checking content safety...")
-
-    # Moderate the prompt
-    is_safe, reason = await moderation.moderate_text(prompt)
-
-    if not is_safe:
-        await interaction.edit_original_response(
-            content=f"🚫 **Content Blocked**\n\n{reason}"
+    # Check rate limits
+    can_generate, reason = rate_limiter.can_generate(user_id)
+    if not can_generate:
+        stats = rate_limiter.get_stats(user_id)
+        embed = discord.Embed(
+            title="⏱️ Rate Limit Reached",
+            description=reason,
+            color=discord.Color.orange(),
+        )
+        embed.add_field(
+            name="Your Usage",
+            value=f"**{stats['used']}/{stats['daily_limit']}** generations used today\n"
+                  f"**{stats['remaining']}** remaining",
+            inline=False
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Acquire rate limit slot
+    if not await rate_limiter.acquire(user_id):
+        await interaction.response.send_message(
+            "❌ Failed to acquire generation slot. Please try again.",
+            ephemeral=True
         )
         return
-
-    await interaction.edit_original_response(
-        content="🎨 Your image generation request has been received..."
-    )
-    
-    # Prepare arguments
-    arguments = {
-        "prompt": prompt,
-        "image_size": aspect_ratio,
-    }
-    
-    start_time = time.time()
     
     try:
-        # Define callback for queue updates
-        def on_queue_update(update):
-            if isinstance(update, fal_client.InProgress):
-                for log in update.logs:
-                    print(f"[Hunyuan] {log.get('message', '')}")
+        # Send initial response
+        await interaction.response.send_message("🔍 Checking content safety...")
         
-        # Submit request and wait for result
-        result = await fal_client.subscribe_async(
+        # Moderate text prompt
+        text_safe, text_reason = await moderation.moderate_text(prompt)
+        if not text_safe:
+            embed = discord.Embed(
+                title="🚫 Content Moderation Failed",
+                description=f"Your prompt was flagged: {text_reason}",
+                color=discord.Color.red(),
+            )
+            await interaction.edit_original_response(content=None, embed=embed)
+            return
+        
+        # Update status
+        await interaction.edit_original_response(content="🎨 Generating image...")
+        
+        # Submit to fal.ai
+        result = await fal_client.run_async(
             "fal-ai/hunyuan-image/v3/text-to-image",
-            arguments=arguments,
-            with_logs=True,
-            on_queue_update=on_queue_update,
+            arguments={
+                "prompt": prompt,
+                "image_size": aspect_ratio,
+            }
         )
+        
+        # Get image URL
+        images = result.get("images", [])
+        if not images:
+            await interaction.edit_original_response(
+                content="❌ Failed to generate image. No images returned."
+            )
+            return
+        
+        image_url = images[0].get("url")
+        
+        # Create aspect ratio display name
+        aspect_ratio_map = {
+            "square_hd": "Square HD",
+            "square": "Square",
+            "portrait_4_3": "Portrait 4:3",
+            "portrait_16_9": "Portrait 16:9",
+            "landscape_4_3": "Landscape 4:3",
+            "landscape_16_9": "Landscape 16:9",
+        }
+        aspect_ratio_display = aspect_ratio_map.get(aspect_ratio, aspect_ratio)
+        
+        # Create embed with image
+        embed = discord.Embed(
+            title="✅ Image Generated",
+            description=f"**Prompt:** {prompt[:200]}{'...' if len(prompt) > 200 else ''}",
+            color=discord.Color.green(),
+        )
+        embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+        
+        # Add usage stats
+        stats = rate_limiter.get_stats(user_id)
+        embed.add_field(
+            name="Usage",
+            value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
+            inline=True
+        )
+        
+        embed.set_image(url=image_url)
+        
+        await interaction.edit_original_response(content=None, embed=embed)
         
     except Exception as e:
-        await interaction.edit_original_response(
-            content=f"❌ Error generating image: {str(e)}"
+        error_message = str(e)
+        embed = discord.Embed(
+            title="❌ Error",
+            description=f"Failed to generate image: {error_message}",
+            color=discord.Color.red(),
         )
-        return
-
-    if result is None or "images" not in result:
-        await interaction.edit_original_response(
-            content="❌ Failed to generate image. Please try again."
-        )
-        return
-
-    elapsed_time = time.time() - start_time
+        
+        try:
+            await interaction.edit_original_response(content=None, embed=embed)
+        except:
+            await interaction.followup.send(embed=embed, ephemeral=True)
     
-    # Process generated images
-    images = result["images"]
-    
-    aspect_ratio_map = {
-        "square_hd": "Square HD",
-        "square": "Square",
-        "portrait_4_3": "Portrait 4:3",
-        "portrait_16_9": "Portrait 16:9",
-        "landscape_4_3": "Landscape 4:3",
-        "landscape_16_9": "Landscape 16:9",
-    }
-    aspect_ratio_display = aspect_ratio_map.get(aspect_ratio, aspect_ratio)
-    
-    # Create embed with metadata
-    embed = discord.Embed(
-        title="🎨 Hunyuan Image 3.0",
-        description=f"**Prompt:** {prompt}",
-        color=discord.Color.purple()
-    )
-    
-    embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
-    embed.add_field(name="Time Taken", value=f"{elapsed_time:.1f}s", inline=True)
-    embed.add_field(name="Generated by", value=interaction.user.mention, inline=True)
-    
-    # Set the first image in the embed (no file attachment)
-    if images:
-        embed.set_image(url=images[0]["url"])
-    
-    # Send only the embed (no file attachments)
-    await interaction.edit_original_response(
-        content=None,
-        embed=embed,
-    )
+    finally:
+        # Always release the rate limit slot
+        rate_limiter.release(user_id)
