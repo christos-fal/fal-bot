@@ -9,6 +9,7 @@ MODULES = [
     "fal_bot.fooocus",
     "fal_bot.lora",
     "fal_bot.ovi",
+    "fal_bot.hunyuan",
 ]
 
 
@@ -49,7 +50,3 @@ async def on_ready():
     print("------")
 
 
-@client.tree.command()
-async def hello(interaction: discord.Interaction):
-    """Says hello!"""
-    await interaction.response.send_message(f"Hi, {interaction.user.mention}")

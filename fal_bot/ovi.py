@@ -16,16 +16,10 @@ fal_client.api_key = config.FAL_SECRET
     name="ovi",
     description="Generate a video using Ovi text-to-video or image-to-video model",
 )
-@app_commands.autocomplete(resolution=utils.autocomplete_from(OVI_RESOLUTIONS))
 async def command(
     interaction: discord.Interaction,
+    mode: Literal["text-to-video", "image-to-video"],
     prompt: str,
-    mode: Literal["text-to-video", "image-to-video"] = "text-to-video",
-    negative_prompt: str = "jitter, bad hands, blur, distortion",
-    num_inference_steps: int = 30,
-    audio_negative_prompt: str = "robotic, muffled, echo, distorted",
-    resolution: str = "992x512",
-    seed: int | None = None,
     image: discord.Attachment | None = None,
 ):
     # Validate image requirement for image-to-video mode
@@ -44,53 +38,45 @@ async def command(
         )
         return
 
-    await interaction.response.send_message("Your video generation request has been received.")
+    await interaction.response.send_message("🎬 Your video generation request has been received...")
     
     # Determine the model endpoint and arguments based on mode
     if mode == "text-to-video":
         model_endpoint = "fal-ai/ovi"
         arguments = {
             "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "num_inference_steps": num_inference_steps,
-            "audio_negative_prompt": audio_negative_prompt,
-            "resolution": resolution,
         }
     else:  # image-to-video
         model_endpoint = "fal-ai/ovi/image-to-video"
         arguments = {
             "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "num_inference_steps": num_inference_steps,
-            "audio_negative_prompt": audio_negative_prompt,
             "image_url": image.url,
         }
     
-    if seed is not None:
-        arguments["seed"] = seed
-    
     # Track time
-    with utils.Timed() as timer:
-        try:
-            # Define callback for queue updates
-            def on_queue_update(update):
-                if isinstance(update, fal_client.InProgress):
-                    for log in update.logs:
-                        print(f"[Ovi] {log.get('message', '')}")
-            
-            # Submit request and wait for result
-            result = await fal_client.subscribe_async(
-                model_endpoint,
-                arguments=arguments,
-                with_logs=True,
-                on_queue_update=on_queue_update,
-            )
-            
-        except Exception as e:
-            await interaction.edit_original_response(
-                content=f"❌ Error generating video: {str(e)}"
-            )
-            return
+    import time
+    start_time = time.time()
+    
+    try:
+        # Define callback for queue updates
+        def on_queue_update(update):
+            if isinstance(update, fal_client.InProgress):
+                for log in update.logs:
+                    print(f"[Ovi] {log.get('message', '')}")
+        
+        # Submit request and wait for result
+        result = await fal_client.subscribe_async(
+            model_endpoint,
+            arguments=arguments,
+            with_logs=True,
+            on_queue_update=on_queue_update,
+        )
+        
+    except Exception as e:
+        await interaction.edit_original_response(
+            content=f"❌ Error generating video: {str(e)}"
+        )
+        return
 
     if result is None:
         await interaction.edit_original_response(
@@ -98,6 +84,8 @@ async def command(
         )
         return
 
+    elapsed_time = time.time() - start_time
+    
     # Download the video
     video_url = result["video"]["url"]
     
@@ -106,54 +94,71 @@ async def command(
             content="⬇️ Downloading video..."
         )
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(video_url)
             response.raise_for_status()
             video_data = response.content
         
-        # Create Discord file from video data
-        video_file = discord.File(
-            io.BytesIO(video_data),
-            filename="ovi_generated_video.mp4"
-        )
+        # Check file size (Discord limit is 25MB for free servers)
+        file_size_mb = len(video_data) / (1024 * 1024)
         
-        # Create embed with metadata
-        embed = discord.Embed(
-            title="Ovi Generated Video",
-            description=f"**Prompt:** {prompt}",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="Mode", value=mode, inline=True)
-        embed.add_field(name="Resolution", value=resolution if mode == "text-to-video" else "N/A", inline=True)
-        embed.add_field(name="Inference Steps", value=num_inference_steps, inline=True)
-        embed.add_field(name="Seed", value=result.get("seed", "Random"), inline=True)
-        embed.add_field(name="Time Taken", value=f"{timer.elapsed:.2f}s", inline=True)
-        embed.add_field(name="Generated by", value=interaction.user.mention, inline=True)
-        embed.set_footer(
-            text="Powered by serverless.fal.ai",
-            icon_url=config.FALAI_LOGO_URL,
-        )
-        
-        # Send video file with embed
-        await interaction.edit_original_response(
-            content=None,
-            attachments=[video_file],
-            embed=embed,
-        )
+        if file_size_mb > 25:
+            # File too large, send link instead
+            embed = discord.Embed(
+                title="🎬 Ovi Generated Video",
+                description=f"**Prompt:** {prompt}\n\n⚠️ Video is too large ({file_size_mb:.1f}MB) to upload directly.\n\n[**Click here to download**]({video_url})",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Mode", value=mode, inline=True)
+            embed.add_field(name="Time Taken", value=f"{elapsed_time:.1f}s", inline=True)
+            embed.add_field(name="Generated by", value=interaction.user.mention, inline=True)
+            embed.set_footer(
+                text="Powered by fal",
+                icon_url=config.FALAI_LOGO_URL,
+            )
+            
+            await interaction.edit_original_response(
+                content=None,
+                embed=embed,
+            )
+        else:
+            # Create Discord file from video data
+            video_file = discord.File(
+                io.BytesIO(video_data),
+                filename="ovi_video.mp4"
+            )
+            
+            # Create embed with metadata
+            embed = discord.Embed(
+                title="🎬 Ovi Generated Video",
+                description=f"**Prompt:** {prompt}",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Mode", value=mode, inline=True)
+            embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
+            embed.add_field(name="Time Taken", value=f"{elapsed_time:.1f}s", inline=True)
+            embed.add_field(name="Generated by", value=interaction.user.mention, inline=True)
+            embed.set_footer(
+                text="Powered by serverless.fal.ai",
+                icon_url=config.FALAI_LOGO_URL,
+            )
+            
+            # Send video file with embed
+            await interaction.edit_original_response(
+                content=None,
+                attachments=[video_file],
+                embed=embed,
+            )
         
     except Exception as e:
         # If download fails, fall back to showing the link
         embed = discord.Embed(
-            title="Ovi Generated Video",
-            description=f"For the full resolution video, click [here]({video_url}).",
-            color=discord.Color.blue()
+            title="🎬 Ovi Generated Video",
+            description=f"**Prompt:** {prompt}\n\n[**Click here to view**]({video_url})",
+            color=discord.Color.orange()
         )
-        embed.add_field(name="Prompt", value=prompt, inline=False)
         embed.add_field(name="Mode", value=mode, inline=True)
-        embed.add_field(name="Resolution", value=resolution if mode == "text-to-video" else "N/A", inline=True)
-        embed.add_field(name="Inference Steps", value=num_inference_steps, inline=True)
-        embed.add_field(name="Seed", value=result.get("seed", "Random"), inline=True)
-        embed.add_field(name="Time Taken", value=f"{timer.elapsed:.2f}s", inline=True)
+        embed.add_field(name="Time Taken", value=f"{elapsed_time:.1f}s", inline=True)
         embed.add_field(name="Generated by", value=interaction.user.mention, inline=True)
         embed.set_footer(
             text="Powered by serverless.fal.ai",
@@ -161,7 +166,6 @@ async def command(
         )
         
         await interaction.edit_original_response(
-            content=f"⚠️ Video too large to upload directly. Download it here: {video_url}",
+            content=f"⚠️ Could not download video: {str(e)}",
             embed=embed,
         )
-        
