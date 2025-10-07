@@ -115,6 +115,28 @@ async def submit_interactive_task(
         result = await client.result(request_handle)
         return result
 
+def make_video_embed(
+    title: str,
+    video_url: str,
+    prompt: str,
+    fields: dict[str, Any],
+):
+    embed = discord.Embed(
+        title=title,
+        description=f"For the full resolution video, click [here]({video_url}).",
+    )
+    embed.add_field(name="Prompt", value=prompt, inline=False)
+
+    for parameter, value in fields.items():
+        embed.add_field(name=parameter, value=value)
+
+    # Note: Discord doesn't support video previews in embeds like images
+    # The video will be accessible via the URL in the description
+    embed.set_footer(
+        text="Powered by serverless.fal.ai",
+        icon_url=config.FALAI_LOGO_URL,
+    )
+    return embed
 
 def make_prompted_image_embed(
     title: str,

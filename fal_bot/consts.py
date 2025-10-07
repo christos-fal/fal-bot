@@ -292,7 +292,15 @@ FOOOCUS_STYLES = [
     "Mk Ron English Style",
     "Mk Shepard Fairey Style",
 ]
-
+OVI_RESOLUTIONS = [
+    "512x992",
+    "992x512", 
+    "960x512",
+    "512x960",
+    "720x720",
+    "448x1120",
+    "1120x448"
+]
 FOOOCUS_ASPECT_RATIOS = [
     "1024x1024",
     "1024x960",
