@@ -132,10 +132,7 @@ def make_video_embed(
 
     # Note: Discord doesn't support video previews in embeds like images
     # The video will be accessible via the URL in the description
-    embed.set_footer(
-        text="Powered by serverless.fal.ai",
-        icon_url=config.FALAI_LOGO_URL,
-    )
+   
     return embed
 
 def make_prompted_image_embed(
@@ -154,10 +151,7 @@ def make_prompted_image_embed(
         embed.add_field(name=parameter, value=value)
 
     embed.set_image(url=image_url)
-    embed.set_footer(
-        text="Powered by serverless.fal.ai",
-        icon_url=config.FALAI_LOGO_URL,
-    )
+    
     return embed
 
 
