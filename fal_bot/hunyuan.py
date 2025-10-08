@@ -140,10 +140,7 @@ async def command(
         # Set the image
         embed.set_image(url=image_url)
 
-        # Footer
-        embed.set_footer(
-            text="Powered by serverless.fal.ai", icon_url=config.FALAI_LOGO_URL
-        )
+        
 
         await interaction.edit_original_response(content=None, embed=embed)
 
