@@ -6,8 +6,8 @@ from discord import app_commands
 from fal_bot.config import RAW_GUILD_ID
 
 MODULES = [
-    "fal_bot.fooocus",
-    "fal_bot.lora",
+    "fal_bot.ovi",
+    "fal_bot.hunyuan",
 ]
 
 
@@ -46,9 +46,3 @@ async def on_ready():
     print("------")
     print(f"Logged in as {client.user} (ID: {client.user.id})")
     print("------")
-
-
-@client.tree.command()
-async def hello(interaction: discord.Interaction):
-    """Says hello!"""
-    await interaction.response.send_message(f"Hi, {interaction.user.mention}")

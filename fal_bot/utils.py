@@ -9,7 +9,6 @@ import discord
 from discord import app_commands
 from httpx import HTTPStatusError
 
-from fal_bot import config
 from fal_bot.queue_client import (
     InProgress,
     Queued,
@@ -95,25 +94,43 @@ async def submit_interactive_task(
 
         iteration_id = 0
         async for status in client.poll_until_ready(request_handle):
-            match status:
-                case Queued(position):
-                    message = "Your request is in queue. "
-                    message += f"Position: {position + 1}"
-                    await interaction.edit_original_response(content=message)
-                case InProgress(logs):
-                    message = "Your request is in progress "
-                    message += "🏃‍♂️" if iteration_id % 2 == 0 else "🚶"
-                    message += f"(running for {time.monotonic() - time_start:.2f}s)"
-                    message += "."
-                    if formatted_logs := format_logs(logs):
-                        message += "\n" + wrap_source_code(formatted_logs)
-
-                    await interaction.edit_original_response(content=message)
+            if isinstance(status, Queued):
+                message = "Your request is in queue. "
+                message += f"Position: {status.position + 1}"
+                await interaction.edit_original_response(content=message)
+            elif isinstance(status, InProgress):
+                message = "Your request is in progress "
+                message += "🏃‍♂️" if iteration_id % 2 == 0 else "🚶"
+                message += f"(running for {time.monotonic() - time_start:.2f}s)"
+                message += "."
+                if formatted_logs := format_logs(status.logs):
+                    message += "\n" + wrap_source_code(formatted_logs)
 
             iteration_id += 1
 
         result = await client.result(request_handle)
         return result
+
+
+def make_video_embed(
+    title: str,
+    video_url: str,
+    prompt: str,
+    fields: dict[str, Any],
+):
+    embed = discord.Embed(
+        title=title,
+        description=f"For the full resolution video, click [here]({video_url}).",
+    )
+    embed.add_field(name="Prompt", value=prompt, inline=False)
+
+    for parameter, value in fields.items():
+        embed.add_field(name=parameter, value=value)
+
+    # Note: Discord doesn't support video previews in embeds like images
+    # The video will be accessible via the URL in the description
+
+    return embed
 
 
 def make_prompted_image_embed(
@@ -132,10 +149,7 @@ def make_prompted_image_embed(
         embed.add_field(name=parameter, value=value)
 
     embed.set_image(url=image_url)
-    embed.set_footer(
-        text="Powered by serverless.fal.ai",
-        icon_url=config.FALAI_LOGO_URL,
-    )
+
     return embed
 
 
