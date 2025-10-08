@@ -46,5 +46,3 @@ async def on_ready():
     print("------")
     print(f"Logged in as {client.user} (ID: {client.user.id})")
     print("------")
-
-

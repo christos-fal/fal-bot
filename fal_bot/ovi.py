@@ -1,16 +1,17 @@
-from typing import Literal
 import io
+from typing import Literal
 
 import discord
-from discord import app_commands
 import fal_client
 import httpx
+from discord import app_commands
 
-from fal_bot import config, utils, moderation
+from fal_bot import config, moderation
 from fal_bot.rate_limiter import rate_limiter
 
 # Configure fal_client with your API key
 fal_client.api_key = config.FAL_SECRET
+
 
 @app_commands.command(
     name="ovi",
@@ -23,7 +24,7 @@ async def command(
     image: discord.Attachment | None = None,
 ):
     user_id = interaction.user.id
-    
+
     # Check rate limits
     can_generate, reason = rate_limiter.can_generate(user_id)
     if not can_generate:
@@ -36,20 +37,19 @@ async def command(
         embed.add_field(
             name="Your Usage",
             value=f"**{stats['used']}/{stats['daily_limit']}** generations used today\n"
-                  f"**{stats['remaining']}** remaining",
-            inline=False
+            f"**{stats['remaining']}** remaining",
+            inline=False,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
-    
+
     # Acquire rate limit slot
     if not await rate_limiter.acquire(user_id):
         await interaction.response.send_message(
-            "❌ Failed to acquire generation slot. Please try again.",
-            ephemeral=True
+            "❌ Failed to acquire generation slot. Please try again.", ephemeral=True
         )
         return
-    
+
     try:
         # Validate image requirement for image-to-video mode
         if mode == "image-to-video" and image is None:
@@ -60,10 +60,10 @@ async def command(
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        
+
         # Send initial response
         await interaction.response.send_message("🔍 Checking content safety...")
-        
+
         # Moderate text prompt
         text_safe, text_reason = await moderation.moderate_text(prompt)
         if not text_safe:
@@ -74,12 +74,12 @@ async def command(
             )
             await interaction.edit_original_response(content=None, embed=embed)
             return
-        
+
         # Moderate image if provided
         if image:
             # Download image
             image_bytes = await image.read()
-            
+
             # Moderate image
             image_safe, image_reason = await moderation.moderate_image(image_bytes)
             if not image_safe:
@@ -90,10 +90,10 @@ async def command(
                 )
                 await interaction.edit_original_response(content=None, embed=embed)
                 return
-        
+
         # Update status
         await interaction.edit_original_response(content="🎬 Generating video...")
-        
+
         # Prepare request based on mode
         if mode == "text-to-video":
             api_endpoint = "fal-ai/ovi"
@@ -106,35 +106,34 @@ async def command(
                 "prompt": prompt,
                 "image_url": image.url,
             }
-        
+
         # Submit to fal.ai
         result = await fal_client.run_async(api_endpoint, arguments=request_data)
-        
+
         # Get video URL
         video_url = result.get("video", {}).get("url")
-        
+
         if not video_url:
             await interaction.edit_original_response(
                 content="❌ Failed to generate video. No video URL returned."
             )
             return
-        
+
         # Download and send the video
         try:
             await interaction.edit_original_response(content="📥 Downloading video...")
-            
+
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.get(video_url)
                 response.raise_for_status()
                 video_data = response.content
-            
+
             # Check file size (Discord limit is 25MB for non-nitro, 500MB for nitro)
             file_size_mb = len(video_data) / (1024 * 1024)
-            
+
             # Get generation metadata from result
             seed = result.get("seed", "N/A")
-            
-            
+
             if file_size_mb > 25:
                 # File too large, send link instead
                 embed = discord.Embed(
@@ -142,140 +141,141 @@ async def command(
                     description=f"For the full resolution video, click [here]({video_url}).",
                     color=0x7289DA,  # Discord blurple color
                 )
-                
+
                 # Prompt section
                 embed.add_field(
                     name="Prompt",
-                    value=prompt[:1024] if len(prompt) <= 1024 else prompt[:1021] + "...",
-                    inline=False
+                    value=prompt[:1024]
+                    if len(prompt) <= 1024
+                    else prompt[:1021] + "...",
+                    inline=False,
                 )
-                
+
                 # First row of info
-                embed.add_field(name="Mode", value=mode.replace("-", " ").title(), inline=True)
-                embed.add_field(name="Resolution", value="992x512", inline=True)  # Or get from result
-                embed.add_field(name="Inference Steps", value="30", inline=True)  # Or get from result
-                
+                embed.add_field(
+                    name="Mode", value=mode.replace("-", " ").title(), inline=True
+                )
+                embed.add_field(
+                    name="Resolution", value="992x512", inline=True
+                )  # Or get from result
+                embed.add_field(
+                    name="Inference Steps", value="30", inline=True
+                )  # Or get from result
+
                 # Second row of info
                 embed.add_field(name="Seed", value=str(seed), inline=True)
-                
-                
+
                 # Usage stats
                 stats = rate_limiter.get_stats(user_id)
                 embed.add_field(
                     name="Usage",
                     value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
-                    inline=True
+                    inline=True,
                 )
-                
+
                 # Generated by
                 embed.add_field(
                     name="Generated by",
                     value=f"{interaction.user.mention}",
-                    inline=False
+                    inline=False,
                 )
-                
-                # Footer
-                embed.set_footer(
-                    text="Powered by serverless.fal.ai",
-                    icon_url=config.FALAI_LOGO_URL
-                )
-                
+
                 await interaction.edit_original_response(content=None, embed=embed)
             else:
                 # Create file from video data
                 video_file = discord.File(
-                    io.BytesIO(video_data),
-                    filename="ovi_video.mp4"
+                    io.BytesIO(video_data), filename="ovi_video.mp4"
                 )
-                
+
                 # Create beautiful embed with video info
                 embed = discord.Embed(
                     title="Ovi Generated Video",
                     description=f"For the full resolution video, click [here]({video_url}).",
                     color=0x7289DA,  # Discord blurple color
                 )
-                
+
                 # Prompt section
                 embed.add_field(
                     name="Prompt",
-                    value=prompt[:1024] if len(prompt) <= 1024 else prompt[:1021] + "...",
-                    inline=False
+                    value=prompt[:1024]
+                    if len(prompt) <= 1024
+                    else prompt[:1021] + "...",
+                    inline=False,
                 )
-                
+
                 # First row of info
-                embed.add_field(name="Mode", value=mode.replace("-", " ").title(), inline=True)
-                embed.add_field(name="Resolution", value="992x512", inline=True)  # Adjust based on mode
+                embed.add_field(
+                    name="Mode", value=mode.replace("-", " ").title(), inline=True
+                )
+                embed.add_field(
+                    name="Resolution", value="992x512", inline=True
+                )  # Adjust based on mode
                 embed.add_field(name="Inference Steps", value="30", inline=True)
-                
+
                 # Second row of info
                 embed.add_field(name="Seed", value=str(seed), inline=True)
-                
-                
+
                 # Usage stats
                 stats = rate_limiter.get_stats(user_id)
                 embed.add_field(
                     name="Usage",
                     value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
-                    inline=True
+                    inline=True,
                 )
-                
+
                 # Generated by
                 embed.add_field(
                     name="Generated by",
                     value=f"{interaction.user.mention}",
-                    inline=False
+                    inline=False,
                 )
-                
+
                 # Footer
                 embed.set_footer(
-                    text="Powered by serverless.fal.ai",
-                    icon_url=config.FALAI_LOGO_URL
+                    text="Powered by serverless.fal.ai", icon_url=config.FALAI_LOGO_URL
                 )
-                
+
                 # Send video as attachment with embed
                 await interaction.edit_original_response(
-                    content=None,
-                    embed=embed,
-                    attachments=[video_file]
+                    content=None, embed=embed, attachments=[video_file]
                 )
-                
-        except httpx.HTTPError as e:
+
+        except httpx.HTTPError:
             # If download fails, send link instead with same beautiful format
             embed = discord.Embed(
                 title="Ovi Generated Video",
                 description=f"For the full resolution video, click [here]({video_url}).\n\n"
-                            f"⚠️ Could not download video automatically.",
+                f"⚠️ Could not download video automatically.",
                 color=0x7289DA,
             )
-            
+
             embed.add_field(
                 name="Prompt",
                 value=prompt[:1024] if len(prompt) <= 1024 else prompt[:1021] + "...",
-                inline=False
+                inline=False,
             )
-            
-            embed.add_field(name="Mode", value=mode.replace("-", " ").title(), inline=True)
-            
+
+            embed.add_field(
+                name="Mode", value=mode.replace("-", " ").title(), inline=True
+            )
+
             stats = rate_limiter.get_stats(user_id)
             embed.add_field(
                 name="Usage",
                 value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
-                inline=True
+                inline=True,
             )
-            
+
             embed.add_field(
-                name="Generated by",
-                value=f"{interaction.user.mention}",
-                inline=False
+                name="Generated by", value=f"{interaction.user.mention}", inline=False
             )
-            
+
             embed.set_footer(
-                text="Powered by serverless.fal.ai",
-                icon_url=config.FALAI_LOGO_URL
+                text="Powered by serverless.fal.ai", icon_url=config.FALAI_LOGO_URL
             )
-            
+
             await interaction.edit_original_response(content=None, embed=embed)
-        
+
     except Exception as e:
         error_message = str(e)
         embed = discord.Embed(
@@ -283,12 +283,12 @@ async def command(
             description=f"Failed to generate video: {error_message}",
             color=discord.Color.red(),
         )
-        
+
         try:
             await interaction.edit_original_response(content=None, embed=embed)
-        except:
+        except Exception:
             await interaction.followup.send(embed=embed, ephemeral=True)
-    
+
     finally:
         # Always release the rate limit slot
         rate_limiter.release(user_id)

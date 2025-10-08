@@ -1,5 +1,7 @@
-import google.generativeai as genai
 import json
+
+import google.generativeai as genai
+
 from fal_bot import config
 
 # Configure Gemini
@@ -9,7 +11,7 @@ genai.configure(api_key=config.GEMINI_API_KEY)
 async def moderate_text(text: str) -> tuple[bool, str]:
     """
     Comprehensive text moderation using Google Gemini.
-    
+
     Checks for:
     - NSFW, porn, nudity, sexually suggestive content
     - Hate speech
@@ -17,14 +19,14 @@ async def moderate_text(text: str) -> tuple[bool, str]:
     - Political figures
     - Children in inappropriate contexts
     - Self-harm
-    
+
     Returns:
         tuple[bool, str]: (is_safe, reason_if_unsafe)
     """
     try:
         # Use Gemini 2.0 Flash for fast, cheap moderation
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')  # Changed here
-        
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")  # Changed here
+
         system_prompt = """You are a strict content moderation system. Analyze the prompt and determine if it violates ANY of these policies:
 
 1. NSFW/Sexual Content: Any pornographic, nude, sexually explicit, or sexually suggestive content. This includes:
@@ -60,18 +62,18 @@ OR
 Be EXTREMELY strict - when in doubt, mark as unsafe. Err on the side of caution."""
 
         prompt_to_check = f"{system_prompt}\n\nAnalyze this prompt: {text}"
-        
+
         response = await model.generate_content_async(
             prompt_to_check,
             generation_config=genai.GenerationConfig(
                 temperature=0,
                 max_output_tokens=150,
-            )
+            ),
         )
-        
+
         # Parse response
         result_text = response.text.strip()
-        
+
         # Try to extract JSON from response
         try:
             # Remove markdown code blocks if present
@@ -79,24 +81,28 @@ Be EXTREMELY strict - when in doubt, mark as unsafe. Err on the side of caution.
                 result_text = result_text.split("```json")[1].split("```")[0].strip()
             elif "```" in result_text:
                 result_text = result_text.split("```")[1].split("```")[0].strip()
-            
+
             parsed = json.loads(result_text)
-            
+
             if not parsed.get("safe", True):
                 reason = parsed.get("reason", "Content violates our content policy")
                 return False, reason
-            
+
             return True, ""
-            
+
         except (json.JSONDecodeError, IndexError):
             # If JSON parsing fails, check for keywords
             result_lower = result_text.lower()
-            if "unsafe" in result_lower or "violat" in result_lower or '"safe": false' in result_lower:
+            if (
+                "unsafe" in result_lower
+                or "violat" in result_lower
+                or '"safe": false' in result_lower
+            ):
                 return False, "Content may violate our content policy"
-            
+
             # If we can't parse and no clear unsafe signal, allow it
             return True, ""
-        
+
     except Exception as e:
         print(f"[Moderation Error] {str(e)}")
         # If moderation fails, block the request for safety
@@ -106,24 +112,24 @@ Be EXTREMELY strict - when in doubt, mark as unsafe. Err on the side of caution.
 async def moderate_image(image_url: str, prompt: str = "") -> tuple[bool, str]:
     """
     Moderate image content using Gemini Vision.
-    
+
     Checks for:
     - NSFW, nudity, sexually suggestive content
     - Violence, gore, disturbing imagery
     - Children/minors
     - Political figures
     - Hate symbols
-    
+
     Returns:
         tuple[bool, str]: (is_safe, reason_if_unsafe)
     """
     try:
         # Use Gemini 2.0 Flash with vision
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')  # Changed here
-        
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")  # Changed here
+
         system_prompt = """You are a strict image content moderation system. Analyze the image and determine if it violates ANY of these policies:
 
-1. NSFW/Sexual Content: 
+1. NSFW/Sexual Content:
    - Nudity or partial nudity
    - Sexually explicit content
    - Sexually suggestive poses, clothing, or scenarios
@@ -158,34 +164,37 @@ Be EXTREMELY strict - when in doubt, mark as unsafe. Err on the side of caution.
 
         # Download image content
         import httpx
+
         async with httpx.AsyncClient() as client:
             response = await client.get(image_url)
             response.raise_for_status()
             image_data = response.content
-        
+
         # Upload to Gemini
-        import PIL.Image
         import io
+
+        import PIL.Image
+
         image = PIL.Image.open(io.BytesIO(image_data))
-        
+
         prompt_parts = [
             system_prompt,
             f"\n\nContext prompt from user: {prompt}" if prompt else "",
             "\n\nAnalyze this image:",
-            image
+            image,
         ]
-        
+
         response = await model.generate_content_async(
             prompt_parts,
             generation_config=genai.GenerationConfig(
                 temperature=0,
                 max_output_tokens=150,
-            )
+            ),
         )
-        
+
         # Parse response
         result_text = response.text.strip()
-        
+
         # Try to extract JSON from response
         try:
             # Remove markdown code blocks if present
@@ -193,34 +202,40 @@ Be EXTREMELY strict - when in doubt, mark as unsafe. Err on the side of caution.
                 result_text = result_text.split("```json")[1].split("```")[0].strip()
             elif "```" in result_text:
                 result_text = result_text.split("```")[1].split("```")[0].strip()
-            
+
             parsed = json.loads(result_text)
-            
+
             if not parsed.get("safe", True):
                 reason = parsed.get("reason", "Image contains inappropriate content")
                 return False, reason
-            
+
             return True, ""
-            
+
         except (json.JSONDecodeError, IndexError):
             # If JSON parsing fails, check for keywords
             result_lower = result_text.lower()
-            if "unsafe" in result_lower or "violat" in result_lower or '"safe": false' in result_lower:
+            if (
+                "unsafe" in result_lower
+                or "violat" in result_lower
+                or '"safe": false' in result_lower
+            ):
                 return False, "Image may contain inappropriate content"
-            
+
             # If we can't parse and no clear unsafe signal, allow it
             return True, ""
-        
+
     except Exception as e:
         print(f"[Image Moderation Error] {str(e)}")
         # If moderation fails, block the request for safety
         return False, "Unable to verify image safety. Please try again."
 
 
-async def moderate_request(prompt: str, image_url: str | None = None) -> tuple[bool, str]:
+async def moderate_request(
+    prompt: str, image_url: str | None = None
+) -> tuple[bool, str]:
     """
     Moderate both text prompt and image (if provided).
-    
+
     Returns:
         tuple[bool, str]: (is_safe, reason_if_unsafe)
     """
@@ -228,11 +243,11 @@ async def moderate_request(prompt: str, image_url: str | None = None) -> tuple[b
     text_safe, text_reason = await moderate_text(prompt)
     if not text_safe:
         return False, text_reason
-    
+
     # Check image if provided
     if image_url:
         image_safe, image_reason = await moderate_image(image_url, prompt)
         if not image_safe:
             return False, image_reason
-    
+
     return True, ""
