@@ -12,28 +12,33 @@ from fal_bot.rate_limiter import rate_limiter
 # Configure fal_client
 fal_client.api_key = config.FAL_SECRET
 
+
 @app_commands.command(
-    name="hunyuan",
-    description="Generate an image using Hunyuan Image 3.0 text-to-image model",
+    name="flux_krea",
+    description="Generate an image using FLUX.1 Krea [dev] model",
 )
-@app_commands.choices(aspect_ratio=[
-    app_commands.Choice(name="Square HD", value="square_hd"),
-    app_commands.Choice(name="Square", value="square"),
-    app_commands.Choice(name="Portrait 9:16", value="portrait_16_9"),
-    app_commands.Choice(name="Landscape 4:3", value="landscape_4_3"),
-    app_commands.Choice(name="Landscape 16:9", value="landscape_16_9"),
-])
+@app_commands.choices(
+    aspect_ratio=[
+        app_commands.Choice(name="Square HD", value="square_hd"),
+        app_commands.Choice(name="Square", value="square"),
+        app_commands.Choice(name="Portrait 3:4", value="portrait_4_3"),
+        app_commands.Choice(name="Portrait 9:16", value="portrait_16_9"),
+        app_commands.Choice(name="Landscape 4:3", value="landscape_4_3"),
+        app_commands.Choice(name="Landscape 16:9", value="landscape_16_9"),
+    ]
+)
 async def command(
     interaction: discord.Interaction,
     prompt: str,
     aspect_ratio: str,
 ):
     user_id = interaction.user.id
-    
-    # Check rate limits
-    can_generate, reason = rate_limiter.can_generate(user_id)
-    if not can_generate:
+
+    # Try to acquire rate limit slot (this also checks if user can generate)
+    if not await rate_limiter.acquire(user_id):
         stats = rate_limiter.get_stats(user_id)
+        can_generate, reason = rate_limiter.can_generate(user_id)
+        
         embed = discord.Embed(
             title="⏱️ Rate Limit Reached",
             description=reason,
@@ -42,24 +47,16 @@ async def command(
         embed.add_field(
             name="Your Usage",
             value=f"**{stats['used']}/{stats['daily_limit']}** generations used today\n"
-                  f"**{stats['remaining']}** remaining",
-            inline=False
+            f"**{stats['remaining']}** remaining",
+            inline=False,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
-    
-    # Acquire rate limit slot
-    if not await rate_limiter.acquire(user_id):
-        await interaction.response.send_message(
-            "❌ Failed to acquire generation slot. Please try again.",
-            ephemeral=True
-        )
-        return
-    
+
     try:
         # Send initial response
         await interaction.response.send_message("🔍 Checking content safety...")
-        
+
         # Moderate text prompt
         text_safe, text_reason = await moderation.moderate_text(prompt)
         if not text_safe:
@@ -70,19 +67,20 @@ async def command(
             )
             await interaction.edit_original_response(content=None, embed=embed)
             return
-        
+
         # Update status
         await interaction.edit_original_response(content="🎨 Generating image...")
-        
+
+        # Prepare request for text-to-image
+        api_endpoint = "fal-ai/flux/krea"
+        request_data = {
+            "prompt": prompt,
+            "image_size": aspect_ratio,
+        }
+
         # Submit to fal.ai
-        result = await fal_client.run_async(
-            "fal-ai/hunyuan-image/v3/text-to-image",
-            arguments={
-                "prompt": prompt,
-                "image_size": aspect_ratio,
-            }
-        )
-        
+        result = await fal_client.run_async(api_endpoint, arguments=request_data)
+
         # Get image URL
         images = result.get("images", [])
         if not images:
@@ -90,65 +88,65 @@ async def command(
                 content="❌ Failed to generate image. No images returned."
             )
             return
-        
+
         image_url = images[0].get("url")
-        
+
         # Get metadata from result
         seed = result.get("seed", "N/A")
-        
-        
+        timings = result.get("timings", {})
+        time_taken = timings.get("inference", 0)
+
         # Create aspect ratio display name
         aspect_ratio_map = {
             "square_hd": "Square HD",
             "square": "Square",
+            "portrait_4_3": "Portrait 3:4",
             "portrait_16_9": "Portrait 9:16",
             "landscape_4_3": "Landscape 4:3",
             "landscape_16_9": "Landscape 16:9",
         }
         aspect_ratio_display = aspect_ratio_map.get(aspect_ratio, aspect_ratio)
-        
+
         # Create beautiful embed
         embed = discord.Embed(
-            title="🎨 Hunyuan Image 3.0 Generated",
+            title="✨ FLUX.1 Krea Generated",
             description="Click the image to view in full resolution.",
             color=0x7289DA,  # Discord blurple color
         )
-        
+
         # Prompt section
         embed.add_field(
             name="Prompt",
             value=prompt[:1024] if len(prompt) <= 1024 else prompt[:1021] + "...",
-            inline=False
+            inline=False,
         )
-        
+
         # Info row
         embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
         embed.add_field(name="Seed", value=str(seed), inline=True)
-        
-        
+
+        # Second row
+        if time_taken:
+            embed.add_field(name="Time Taken", value=f"{time_taken:.2f}s", inline=True)
+
         # Usage stats
         stats = rate_limiter.get_stats(user_id)
         embed.add_field(
             name="Usage",
             value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
-            inline=True
+            inline=True,
         )
-        
+
         # Generated by
         embed.add_field(
-            name="Generated by",
-            value=f"{interaction.user.mention}",
-            inline=False
+            name="Generated by", value=f"{interaction.user.mention}", inline=False
         )
-        
+
         # Set the image
         embed.set_image(url=image_url)
-        
-        
-        
-        
+
         await interaction.edit_original_response(content=None, embed=embed)
-        
+
     except Exception as e:
         error_message = str(e)
         embed = discord.Embed(
@@ -156,12 +154,12 @@ async def command(
             description=f"Failed to generate image: {error_message}",
             color=discord.Color.red(),
         )
-        
+
         try:
             await interaction.edit_original_response(content=None, embed=embed)
         except Exception:
             await interaction.followup.send(embed=embed, ephemeral=True)
-    
+
     finally:
         # Always release the rate limit slot
         rate_limiter.release(user_id)

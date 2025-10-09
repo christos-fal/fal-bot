@@ -77,11 +77,8 @@ async def command(
 
         # Moderate image if provided
         if image:
-            # Download image
-            image_bytes = await image.read()
-
-            # Moderate image
-            image_safe, image_reason = await moderation.moderate_image(image_bytes)
+            # Moderate image using Discord's CDN URL directly
+            image_safe, image_reason = await moderation.moderate_image(image.url, prompt)
             if not image_safe:
                 embed = discord.Embed(
                     title="🚫 Content Moderation Failed",
