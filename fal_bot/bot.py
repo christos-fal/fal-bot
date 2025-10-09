@@ -9,6 +9,7 @@ MODULES = [
     "fal_bot.ovi",
     "fal_bot.hunyuan",
     "fal_bot.flux_krea",
+    "fal_bot.wan_22",
 ]
 
 
