@@ -8,6 +8,7 @@ from fal_bot.config import RAW_GUILD_ID
 MODULES = [
     "fal_bot.ovi",
     "fal_bot.hunyuan",
+    "fal_bot.flux_krea",
 ]
 
 

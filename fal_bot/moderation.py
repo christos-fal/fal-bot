@@ -39,6 +39,7 @@ async def moderate_text(text: str) -> tuple[bool, str]:
    - Current or historical political leaders
    - Presidents, prime ministers, dictators, government officials
    - By name or recognizable description
+   - celebrities, artists, influencers, are okay unless they are included in inappropriately provocative contexts
 
 3. Violence/Gore: Graphic violence, blood, gore, death, or disturbing imagery including:
    - Blood, injuries, death
@@ -141,11 +142,12 @@ async def moderate_image(image_url: str, prompt: str = "") -> tuple[bool, str]:
    - Any recognizable politicians, world leaders, or political figures
    - Government officials, historical political leaders
    - Political symbols or party imagery
+   - Artists, influencers, or celebrities are okay unless they are included in inappropriately provocative contexts
 
 4. Violence/Gore:
    - Blood, injuries, wounds
    - Weapons being used violently
-   - Violence, fighting, or aggressive acts
+   - Extreme Violence, fighting, or aggressive acts
    - Gore, death, or disturbing imagery
    - Scary or shocking content
 

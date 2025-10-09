@@ -18,7 +18,7 @@ class RateLimiter:
         self.active_users: Set[int] = set()
 
         # Limits
-        self.DAILY_LIMIT = 5
+        self.DAILY_LIMIT = 100
         self.CONCURRENT_LIMIT = 1
 
     def _clean_old_timestamps(self, user_id: int):
