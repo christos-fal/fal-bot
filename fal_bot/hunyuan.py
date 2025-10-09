@@ -147,6 +147,9 @@ async def command(
         
         
         
+
+        
+
         await interaction.edit_original_response(content=None, embed=embed)
         
     except Exception as e:
