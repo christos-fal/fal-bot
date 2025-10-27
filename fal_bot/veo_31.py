@@ -14,7 +14,7 @@ fal_client.api_key = config.FAL_SECRET
 
 
 @app_commands.command(
-    name="veo",
+    name="veo3.1",
     description="Generate videos using Google's Veo 3.1 Fast model",
 )
 @app_commands.choices(
@@ -40,9 +40,9 @@ async def command(
     user_id = interaction.user.id
 
     # Try to acquire rate limit slot
-    if not await rate_limiter.acquire(user_id):
-        stats = rate_limiter.get_stats(user_id)
-        can_generate, reason = rate_limiter.can_generate(user_id)
+    if not await rate_limiter.acquire(user_id, model="veo"):
+        stats = rate_limiter.get_stats(user_id, model="veo")
+        can_generate, reason = rate_limiter.can_generate(user_id, model="veo")
         
         embed = discord.Embed(
             title="⏱️ Rate Limit Reached",
@@ -198,7 +198,7 @@ async def command(
                 embed.add_field(name="Mode", value=mode_display, inline=True)
                 embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
 
-                stats = rate_limiter.get_stats(user_id)
+                stats = rate_limiter.get_stats(user_id, model="veo")
                 embed.add_field(
                     name="Usage",
                     value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
@@ -234,7 +234,7 @@ async def command(
                 embed.add_field(name="Mode", value=mode_display, inline=True)
                 embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
 
-                stats = rate_limiter.get_stats(user_id)
+                stats = rate_limiter.get_stats(user_id, model="veo")
                 embed.add_field(
                     name="Usage",
                     value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
@@ -276,7 +276,7 @@ async def command(
             embed.add_field(name="Mode", value=mode_display, inline=True)
             embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
 
-            stats = rate_limiter.get_stats(user_id)
+            stats = rate_limiter.get_stats(user_id, model="veo")
             embed.add_field(
                 name="Usage",
                 value=f"{stats['remaining']}/{stats['daily_limit']} remaining",
