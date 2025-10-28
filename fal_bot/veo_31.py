@@ -14,7 +14,7 @@ fal_client.api_key = config.FAL_SECRET
 
 
 @app_commands.command(
-    name="veo3.1",
+    name="veo",
     description="Generate videos using Google's Veo 3.1 Fast model",
 )
 @app_commands.choices(
