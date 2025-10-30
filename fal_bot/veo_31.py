@@ -21,7 +21,9 @@ fal_client.api_key = config.FAL_SECRET
     mode=[
         app_commands.Choice(name="Text to Video", value="text-to-video"),
         app_commands.Choice(name="Image to Video", value="image-to-video"),
-        app_commands.Choice(name="First & Last Frame to Video", value="first-last-frame"),
+        app_commands.Choice(
+            name="First & Last Frame to Video", value="first-last-frame"
+        ),
     ],
     aspect_ratio=[
         app_commands.Choice(name="Landscape 16:9", value="16:9"),
@@ -31,19 +33,22 @@ fal_client.api_key = config.FAL_SECRET
 )
 async def command(
     interaction: discord.Interaction,
-    mode: Literal["text-to-video", "image-to-video", "first-last-frame"],  # Required, first
+    mode: Literal[
+        "text-to-video", "image-to-video", "first-last-frame"
+    ],  # Required, first
     prompt: str,  # Required, second
     aspect_ratio: str = "16:9",  # Optional, defaults to 16:9
-    start_frame: discord.Attachment | None = None,  # Used for both i2v and first-last-frame
+    start_frame: discord.Attachment
+    | None = None,  # Used for both i2v and first-last-frame
     last_frame: discord.Attachment | None = None,  # Only for first-last-frame mode
 ):
     user_id = interaction.user.id
 
-    # Try to acquire rate limit slot
-    if not await rate_limiter.acquire(user_id, model="veo"):
+    # Check if user CAN generate (don't acquire yet!)
+    can_gen, reason = rate_limiter.can_generate(user_id, model="veo")
+    if not can_gen:
         stats = rate_limiter.get_stats(user_id, model="veo")
-        can_generate, reason = rate_limiter.can_generate(user_id, model="veo")
-        
+
         embed = discord.Embed(
             title="⏱️ Rate Limit Reached",
             description=reason,
@@ -94,7 +99,9 @@ async def command(
 
         # Moderate start_frame if provided
         if start_frame:
-            frame_safe, frame_reason = await moderation.moderate_image(start_frame.url, prompt)
+            frame_safe, frame_reason = await moderation.moderate_image(
+                start_frame.url, prompt
+            )
             if not frame_safe:
                 embed = discord.Embed(
                     title="🚫 Content Moderation Failed",
@@ -106,7 +113,9 @@ async def command(
 
         # Moderate last_frame if provided
         if last_frame:
-            frame_safe, frame_reason = await moderation.moderate_image(last_frame.url, prompt)
+            frame_safe, frame_reason = await moderation.moderate_image(
+                last_frame.url, prompt
+            )
             if not frame_safe:
                 embed = discord.Embed(
                     title="🚫 Content Moderation Failed",
@@ -116,8 +125,25 @@ async def command(
                 await interaction.edit_original_response(content=None, embed=embed)
                 return
 
+        if not await rate_limiter.acquire(user_id, model="veo"):
+            stats = rate_limiter.get_stats(user_id, model="veo")
+            embed = discord.Embed(
+                title="⏱️ Rate Limit Reached",
+                description="Rate limit reached while processing your request.",
+                color=discord.Color.orange(),
+            )
+            embed.add_field(
+                name="Your Usage",
+                value=f"**{stats['used']}/{stats['daily_limit']}** generations used today",
+                inline=False,
+            )
+            await interaction.edit_original_response(content=None, embed=embed)
+            return
+
         # Update status
-        await interaction.edit_original_response(content="🎬 Generating video with Veo 3.1...")
+        await interaction.edit_original_response(
+            content="🎬 Generating video with Veo 3.1..."
+        )
 
         # Create aspect ratio display name
         aspect_ratio_map = {
@@ -191,12 +217,16 @@ async def command(
 
                 embed.add_field(
                     name="Prompt",
-                    value=prompt[:1024] if len(prompt) <= 1024 else prompt[:1021] + "...",
+                    value=prompt[:1024]
+                    if len(prompt) <= 1024
+                    else prompt[:1021] + "...",
                     inline=False,
                 )
 
                 embed.add_field(name="Mode", value=mode_display, inline=True)
-                embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+                embed.add_field(
+                    name="Aspect Ratio", value=aspect_ratio_display, inline=True
+                )
 
                 stats = rate_limiter.get_stats(user_id, model="veo")
                 embed.add_field(
@@ -227,12 +257,16 @@ async def command(
 
                 embed.add_field(
                     name="Prompt",
-                    value=prompt[:1024] if len(prompt) <= 1024 else prompt[:1021] + "...",
+                    value=prompt[:1024]
+                    if len(prompt) <= 1024
+                    else prompt[:1021] + "...",
                     inline=False,
                 )
 
                 embed.add_field(name="Mode", value=mode_display, inline=True)
-                embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+                embed.add_field(
+                    name="Aspect Ratio", value=aspect_ratio_display, inline=True
+                )
 
                 stats = rate_limiter.get_stats(user_id, model="veo")
                 embed.add_field(
@@ -274,7 +308,9 @@ async def command(
             }.get(mode, mode)
 
             embed.add_field(name="Mode", value=mode_display, inline=True)
-            embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+            embed.add_field(
+                name="Aspect Ratio", value=aspect_ratio_display, inline=True
+            )
 
             stats = rate_limiter.get_stats(user_id, model="veo")
             embed.add_field(

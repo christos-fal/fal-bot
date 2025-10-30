@@ -22,7 +22,6 @@ fal_client.api_key = config.FAL_SECRET
         app_commands.Choice(name="Landscape 16:9", value="16:9"),
         app_commands.Choice(name="Portrait 9:16", value="9:16"),
         app_commands.Choice(name="Square 1:1", value="1:1"),
-
     ]
 )
 async def command(
@@ -38,7 +37,7 @@ async def command(
     if not await rate_limiter.acquire(user_id):
         stats = rate_limiter.get_stats(user_id)
         can_generate, reason = rate_limiter.can_generate(user_id)
-        
+
         embed = discord.Embed(
             title="⏱️ Rate Limit Reached",
             description=reason,
@@ -81,7 +80,9 @@ async def command(
         # Moderate image if provided
         if image:
             # Moderate image using Discord's CDN URL directly
-            image_safe, image_reason = await moderation.moderate_image(image.url, prompt)
+            image_safe, image_reason = await moderation.moderate_image(
+                image.url, prompt
+            )
             if not image_safe:
                 embed = discord.Embed(
                     title="🚫 Content Moderation Failed",
@@ -164,7 +165,9 @@ async def command(
                 embed.add_field(
                     name="Mode", value=mode.replace("-", " ").title(), inline=True
                 )
-                embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+                embed.add_field(
+                    name="Aspect Ratio", value=aspect_ratio_display, inline=True
+                )
                 embed.add_field(name="Seed", value=str(seed), inline=True)
 
                 # Usage stats
@@ -209,8 +212,10 @@ async def command(
                 embed.add_field(
                     name="Mode", value=mode.replace("-", " ").title(), inline=True
                 )
-  
-                embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+
+                embed.add_field(
+                    name="Aspect Ratio", value=aspect_ratio_display, inline=True
+                )
                 embed.add_field(name="Seed", value=str(seed), inline=True)
 
                 # Usage stats
@@ -251,7 +256,9 @@ async def command(
             embed.add_field(
                 name="Mode", value=mode.replace("-", " ").title(), inline=True
             )
-            embed.add_field(name="Aspect Ratio", value=aspect_ratio_display, inline=True)
+            embed.add_field(
+                name="Aspect Ratio", value=aspect_ratio_display, inline=True
+            )
 
             stats = rate_limiter.get_stats(user_id)
             embed.add_field(

@@ -13,17 +13,19 @@ class RateLimiter:
 
     def __init__(self):
         # Track daily usage per model: {user_id: {model: [timestamp1, timestamp2, ...]}}
-        self.daily_usage: Dict[int, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
+        self.daily_usage: Dict[int, Dict[str, list]] = defaultdict(
+            lambda: defaultdict(list)
+        )
 
         # Track concurrent generations: {user_id}
         self.active_users: Set[int] = set()
 
         # Model-specific limits
         self.MODEL_LIMITS = {
-            "veo": 5,      # Veo 3.1 gets 5/day
+            "veo": 5,  # Veo 3.1 gets 5/day
             "default": 50,  # All other models get 50/day
         }
-        
+
         self.CONCURRENT_LIMIT = 1
 
     def _get_model_limit(self, model: str = "default") -> int:
