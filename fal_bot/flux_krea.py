@@ -1,10 +1,6 @@
-from typing import Literal
-import io
-
 import discord
-from discord import app_commands
 import fal_client
-import httpx
+from discord import app_commands
 
 from fal_bot import config, moderation
 from fal_bot.rate_limiter import rate_limiter
@@ -38,7 +34,7 @@ async def command(
     if not await rate_limiter.acquire(user_id):
         stats = rate_limiter.get_stats(user_id)
         can_generate, reason = rate_limiter.can_generate(user_id)
-        
+
         embed = discord.Embed(
             title="⏱️ Rate Limit Reached",
             description=reason,
